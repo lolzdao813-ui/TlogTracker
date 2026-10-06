@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+
+<html lang="id"><head>
+<meta charset="utf-8"/>
+<title>Data Store</title>
+<style>
+  :root{
+    --bg:#0b0f19; --surface:#141b2d; --surface-2:#1f2937;
+    --text:#f1f5f9; --text-dim:#94a3b8; --text-muted:#64748b; --border:rgba(255,255,255,.08);
+    --ok:#10b981; --ok-dim:rgba(16,185,129,.1);
+    --warn:#f59e0b; --warn-dim:rgba(245,158,11,.1); --border-warn:rgba(245,158,11,.2);
+    --bad:#ef4444; --bad-dim:rgba(239,68,68,.1); --border-bad:rgba(239,68,68,.2);
+    --accent:#3b82f6; --accent-2:#6366f1; --accent-glow:rgba(59,130,246,.2);
+    --info:#06b6d4;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  ::selection{background:var(--accent); color:#fff;}
+  ::-webkit-scrollbar{width:6px; height:6px;}
+  ::-webkit-scrollbar-track{background:var(--bg);}
+  ::-webkit-scrollbar-thumb{background:var(--surface-2); border-radius:3px;}
+  ::-webkit-scrollbar-thumb:hover{background:var(--accent);}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); line-height:1.5; -webkit-font-smoothing:antialiased;}
+  body::before{
+    content:'PLII';
+    position:fixed;
+    right:16px;
+    bottom:12px;
+    pointer-events:none;
+    z-index:9999;
+    opacity:0.5;
+    font-size:11px;
+    font-family:var(--mono);
+    font-weight:600;
+    letter-spacing:2px;
+    color:var(--text-muted);
+  }
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .wrap{max-width:1600px; margin:0 auto; padding:76px 24px 60px 264px;}
+
+  /* Sidebar (dibungkus dari .pagenav) */
+  .pagenav{
+    position:fixed; left:0; top:0; bottom:0; width:240px; z-index:200;
+    display:flex; flex-direction:column; gap:4px; margin:0; padding:20px 12px;
+    background:#0a0e18; border-right:1px solid var(--border); border-radius:0; overflow-y:auto;
+  }
+  .pagenav::before{
+    content:'DATA STORE'; display:block; font-family:var(--sans); font-size:15px; font-weight:800;
+    letter-spacing:.15em; color:var(--accent); text-transform:uppercase;
+    padding:6px 10px 16px; margin-bottom:12px; border-bottom:2px solid var(--accent);
+  }
+  .pagetab{
+    padding:12px 16px; font-family:var(--sans); font-size:14px; font-weight:600; cursor:pointer;
+    color:var(--text-dim); border:none; border-left:4px solid transparent; border-radius:8px;
+    transition:all .15s; user-select:none; display:flex; align-items:center; gap:10px;
+  }
+  .pagetab:hover{background:var(--surface-2); color:var(--text);}
+  .pagetab.active{background:rgba(59,130,246,.15); color:#dbe4ff; border-left-color:var(--accent);}
+
+  /* Top bar (dibungkus dari .ticket) */
+  .ticket{
+    background:rgba(20,27,45,.9); backdrop-filter:blur(8px); border-bottom:1px solid var(--border);
+    padding:14px 24px; position:fixed; top:0; left:240px; right:0; z-index:100; margin:0;
+    display:flex; align-items:center; justify-content:space-between; gap:20px;
+  }
+  .eyebrow{display:none;}
+  .title-row{display:flex; align-items:center; gap:10px; margin-top:0;}
+  h1{font-family:var(--sans); font-size:15px; margin:0; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text);}
+  h1::before{content:'⌘'; color:var(--accent); font-size:16px;}
+  .count{
+    font-family:var(--mono); font-weight:700; font-size:12px; line-height:1.3; text-align:right;
+    display:flex; flex-direction:row; align-items:center; gap:10px; color:var(--info);
+  }
+  .count span{display:inline; font-size:11px; color:var(--text-muted); font-weight:600; letter-spacing:.05em; text-transform:uppercase; margin-top:0;}
+  .bar{height:5px; background:var(--surface-2); border-radius:3px; margin-top:0; overflow:hidden; width:140px; display:inline-block; vertical-align:middle;}
+  .bar-fill{height:100%; background:linear-gradient(90deg, var(--accent), var(--info)); box-shadow:0 0 10px var(--accent-glow); transition:width .4s ease;}
+
+  .page{display:none; background:transparent; border:none; border-radius:0; padding:0; margin-bottom:20px;}
+  .page.active{display:block;}
+  .dash-grid{display:grid; grid-template-columns:2fr 1fr; gap:20px; align-items:start;}
+  .dash-col-main{display:flex; flex-direction:column; gap:20px;}
+  .dash-col-side .panel{height:100%;}
+  @media (max-width:1100px){ .dash-grid{grid-template-columns:1fr;} }
+
+  .drop{border:2px dashed var(--border); border-radius:12px; padding:24px 20px; text-align:center; cursor:pointer; font-size:13px; color:var(--text-dim); margin-bottom:0; background:rgba(15,23,42,.5); font-family:var(--sans); transition:all .3s;}
+  .drop:hover, .drop.drag{border-color:var(--accent); color:var(--text); background:rgba(59,130,246,.05);}
+  .drop .sub{font-size:11.5px; margin-top:4px;}
+  .btnrow{display:flex; gap:8px; justify-content:center; margin-top:10px;}
+  .pickbtn{background:var(--surface-2); border:1px solid var(--border); color:#cbd5e1; font-family:var(--sans); font-size:12.5px; font-weight:600; padding:9px 16px; border-radius:6px; cursor:pointer; transition:all .2s;}
+  .pickbtn:hover{background:var(--surface-light,#1f2937); border-color:var(--text-muted); transform:translateY(-1px);}
+  .pickbtn:active{transform:translateY(1px);}
+  #status{font-size:12px; color:var(--text-dim); margin-bottom:14px; min-height:16px; font-family:var(--mono);}
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:20px; font-size:12.5px; box-shadow:0 4px 20px rgba(0,0,0,.4); position:relative; overflow:hidden;}
+  .panel::before{content:''; position:absolute; top:0; left:0; width:4px; height:100%; background:var(--accent);}
+  .panel.warn::before{background:var(--warn);}
+  .panel.bad::before{background:var(--bad);}
+  #waPanel::before{background:var(--ok);}
+  #filePanel::before{background:var(--info);}
+  .panel h3{margin:0 0 14px; font-size:13px; font-family:var(--sans); text-transform:uppercase; letter-spacing:.05em; font-weight:600; color:var(--text-dim); border-left:none; padding-left:0;}
+  .panel.warn h3{color:var(--warn);}
+  .panel.bad h3{color:var(--bad);}
+  .panel ul{margin:0; padding-left:0; list-style:none; max-height:160px; overflow:auto;}
+  .panel li{margin-bottom:4px; padding:8px 10px; border-radius:4px; border-left:4px solid var(--accent); background:rgba(31,41,55,.5); font-family:var(--mono); font-size:11.5px; color:var(--text-dim);}
+  .panel.warn li{border-left-color:var(--warn); background:var(--warn-dim); color:#fde68a;}
+  .panel.bad li{border-left-color:var(--bad); background:var(--bad-dim); color:#fca5a5;}
+  .toolbar{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; align-items:center;}
+  input[type=text], input[type=number], input[type=date], textarea{flex:1; min-width:160px; background:#0f172a; border:1px solid var(--border); color:var(--text); padding:9px 12px; border-radius:6px; font-size:13px; font-family:var(--sans); transition:border-color .2s;}
+  input[type=text]:focus, input[type=number]:focus, input[type=date]:focus, textarea:focus{border-color:var(--accent); outline:none; box-shadow:0 0 0 2px var(--accent-glow);}
+  .tabs{display:flex; gap:8px; background:transparent; padding:0; border-radius:0; flex-wrap:wrap;}
+  .tab{white-space:nowrap; padding:7px 16px; font-size:12px; font-family:var(--sans); font-weight:600; text-transform:uppercase; letter-spacing:.03em; cursor:pointer; color:var(--text-dim); user-select:none; border-radius:999px; background:var(--surface-2); border:1px solid var(--border); transition:all .15s;}
+  .tab:hover{background:var(--surface-light,#1f2937);}
+  .tab.active{color:#fff; background:var(--accent); border-color:var(--accent);}
+  .cgField{display:flex; flex-direction:column; gap:6px; margin-bottom:16px;}
+  .cgField label{font-size:11px; color:var(--text-dim); font-family:var(--sans); text-transform:uppercase; letter-spacing:.05em; font-weight:600;}
+  .cgField textarea{width:100%; box-sizing:border-box; background:#0f172a; color:var(--text); border:1px solid var(--border); border-radius:6px; padding:9px 12px; font-family:var(--mono); font-size:12.5px; resize:vertical;}
+  .cgField textarea:focus{border-color:var(--accent); outline:none; box-shadow:0 0 0 2px var(--accent-glow);}
+  #cgOutput{font-family:var(--mono); font-size:12.5px; background:#000; color:var(--ok); padding:16px; border:1px solid #064e3b; border-radius:6px; min-height:200px; line-height:1.6;}
+  #cgGenerateBtn{width:100%; padding:14px; font-size:14px; text-transform:uppercase; letter-spacing:.08em; background:linear-gradient(135deg, var(--accent), var(--accent-2)); border:none; color:#fff; border-radius:8px;}
+  #cgGenerateBtn:hover{background:linear-gradient(135deg, var(--accent), var(--accent-2)); filter:brightness(1.1); transform:translateY(-1px);}
+  table{width:100%; border-collapse:collapse; font-size:13px; margin-top:0;}
+  code, .code, table td:nth-child(1){font-family:var(--mono); letter-spacing:-.02em; color:var(--accent); font-weight:600;}
+  .meta, table td:nth-child(2){font-family:var(--mono); letter-spacing:-.02em;}
+  th{text-align:left; color:var(--text-dim); font-family:var(--sans); font-size:11px; letter-spacing:.05em; text-transform:uppercase; font-weight:600; padding:12px 10px; border-bottom:2px solid var(--border);}
+  td{padding:14px 10px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle;}
+  tr.row{cursor:pointer; transition:background .1s;}
+  tr.row:hover td{background:rgba(255,255,255,.02);}
+  .ip-cell{color:var(--info) !important;}
+  .badge{display:inline-block; font-family:var(--sans); font-size:10.5px; font-weight:700; padding:3px 8px; letter-spacing:.03em; text-transform:uppercase; border-radius:4px;}
+  .badge.ok{background:var(--ok-dim); color:var(--ok); border:1px solid var(--border-warn, rgba(16,185,129,.2));}
+  .badge.no{background:var(--bad-dim); color:var(--bad); border:1px solid var(--border-bad);}
+  .meta{color:var(--text-muted); font-size:12px;}
+  .footer{display:flex; justify-content:space-between; align-items:center; margin-top:24px; padding:16px 20px; border-top:none; border:1px solid var(--border); border-radius:10px; background:#0a0e18; font-size:12.5px; color:var(--text-muted);}
+  button.reset{background:transparent; border:1px solid var(--border); color:#cbd5e1; font-family:var(--sans); font-size:12.5px; font-weight:600; padding:9px 16px; border-radius:6px; cursor:pointer; transition:all .2s;}
+  button.reset:hover{background:var(--bad-dim); border-color:var(--bad); color:var(--bad);}
+  .actionBtn{width:32px; height:32px; padding:0; background:var(--surface-2); border:1px solid var(--border); border-radius:6px; color:var(--text-dim); font-size:13px; cursor:pointer; margin-right:4px; transition:all .15s; display:inline-flex; align-items:center; justify-content:center;}
+  .actionBtn:hover{color:#fff; border-color:var(--accent); background:var(--surface-light,#1f2937);}
+  tr.archived td{opacity:.5;}
+  .noteText{font-size:11.5px; color:var(--warn); margin-top:3px; font-family:var(--sans);}
+  @media (max-width:900px){
+    .wrap{padding-left:24px;}
+    .pagenav{position:static; width:100%; flex-direction:row; height:auto; border-right:none; border-bottom:1px solid var(--border);}
+    .pagenav::before{display:none;}
+    .ticket{left:0; position:sticky;}
+  }
+  @media (max-width:480px){ td, th{padding:8px 4px;} }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+</head>
+<body>
+<div class="wrap">
+<div class="ticket">
+<div class="eyebrow">📋 Rekap Zip Toko · Harian</div>
+<div class="title-row">
+<h1>Data Store</h1>
+<div class="count" id="countText">0<span> / 0 kekumpul</span></div>
+</div>
+<div class="bar"><div class="bar-fill" id="barFill" style="width:0%"></div></div>
+</div>
+<div class="pagenav">
+<div class="pagetab active" data-page="datastore">🗃️ Data Store</div>
+<div class="pagetab" data-page="copygen">📤 Generate Copy</div>
+</div>
+<div class="page active" id="page-datastore">
+<div class="dash-grid">
+<div class="dash-col-main">
+<div class="panel" id="waPanel" style="border-color:var(--ok);">
+<h3 style="margin:0 0 8px; color:var(--ok);">🗨️ Balas WA Cepat</h3>
+<textarea id="waInput" placeholder="Paste/ketik kode yang ditanyain, pisah koma/spasi/baris baru. Misal: 266, 12, 166, 267, 241, 103, 38, 294" rows="2" style="width:100%; box-sizing:border-box; background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-family:var(--mono); font-size:12.5px; resize:vertical;"></textarea>
+<div style="display:flex; gap:8px; margin-top:8px;">
+<button class="pickbtn" id="waGenBtn" type="button" style="border-color:var(--ok); color:var(--ok);">Cek &amp; Generate Balasan</button>
+</div>
+<div id="waResult" style="margin-top:10px; display:none;"></div>
+</div>
+<div class="drop" id="drop">
+    Tarik folder / file zip toko ke sini
+    <div class="sub">nama file harus format T#DDMM#### (contoh: T60208002.zip)</div>
+<div class="btnrow">
+<button class="pickbtn" id="pickFolder" type="button">Pilih folder</button>
+<button class="pickbtn" id="pickFiles" type="button">Pilih file zip</button>
+</div>
+<input id="folderInput" style="display:none" type="file" webkitdirectory=""/>
+<input accept=".zip" id="filesInput" multiple="" style="display:none" type="file"/>
+</div>
+<div id="status"></div>
+<div class="panel" id="filePanel" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+<span id="fileStatus" style="color:var(--text-dim); font-size:12px;">Belum terhubung ke file (data disimpan sementara di browser)</span>
+<div style="display:flex; gap:6px; flex-wrap:wrap;">
+<button class="pickbtn" id="connectFileBtn" type="button">📁 Hubungkan file penyimpanan</button>
+<button class="pickbtn" id="findFileBtn" type="button" style="background:none; border:1px solid var(--border);">🔍 Cari file yang udah ada</button>
+<button class="pickbtn" id="recoverBtn" type="button" style="background:none; border:1px solid var(--warn); color:var(--warn);">💾 Cek data tersimpan di browser</button>
+</div>
+</div>
+<div class="panel warn" id="panelTgl" style="display:none">
+<h3>Tanggal bermasalah</h3>
+<ul id="listTgl"></ul>
+</div>
+<div class="panel bad" id="panelUk" style="display:none">
+<h3>Ukuran kurang dari 2KB</h3>
+<ul id="listUk"></ul>
+</div>
+<div class="panel bad" id="panelUnknown" style="display:none">
+<h3>Kode gak kedaftar di Data Store</h3>
+<ul id="listUnknown"></ul>
+</div>
+</div>
+<div class="dash-col-side">
+<div class="panel">
+<h3>Tambah Toko Manual</h3>
+<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+<input id="newStoreCode" placeholder="Code" style="min-width: 80px; flex: 1;" type="number"/>
+<input id="newStoreNik" placeholder="NIK" style="min-width: 80px; flex: 1;" type="text"/>
+<input id="newStoreName" placeholder="Nama Toko" style="min-width: 160px; flex: 3;" type="text"/>
+<input id="newStoreIp" placeholder="IP (opsional)" style="min-width: 130px; flex: 1;" type="text"/>
+</div>
+<div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+<label style="display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-dim); cursor:pointer;">
+<input id="openToday" type="checkbox" checked/> Buka hari ini
+</label>
+<label style="display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-dim);">
+Tanggal opening: <input id="newStoreOpenDate" type="date" disabled style="background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:6px 8px;"/>
+</label>
+<button class="pickbtn" id="addStoreBtn" style="padding: 9px 18px; background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700;" type="button">+ Tambah</button>
+</div>
+</div>
+</div>
+</div>
+<div class="toolbar">
+<input id="search" placeholder="Cari code / NIK / nama toko..." type="text"/>
+<div class="tabs">
+<div class="tab active" data-f="semua">Semua</div>
+<div class="tab" data-f="sudah">Sudah</div>
+<div class="tab" data-f="belum">Belum</div>
+<div class="tab" data-f="arsip">Arsip</div>
+<div class="tab" data-f="catatan">Catatan</div>
+<div class="tab" data-f="akanbuka">Akan Buka</div>
+</div>
+<button class="pickbtn" id="copyAllBtn" type="button">📋 Copy semua</button>
+<button class="pickbtn" id="exportBackupBtn" type="button">💾 Export Backup</button>
+<button class="pickbtn" id="exportExcelBtn" type="button">📊 Export Excel</button>
+</div>
+<table>
+<thead><tr><th>Code</th><th>NIK</th><th>Nama toko</th><th>IP</th><th>Status</th><th>Ditandai</th><th>Aksi</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+<div class="footer">
+<span id="lastScan">Belum ada scan zip.</span>
+<button class="reset" id="resetBtn">Reset semua status</button>
+</div>
+</div>
+
+<div class="page" id="page-copygen">
+<div class="panel">
+<h3>📤 Generate Command Copy</h3>
+<div class="cgField">
+<label>Path folder sumber</label>
+<input id="cgSourcePath" placeholder="C:\Aplication Master" type="text"/>
+</div>
+<div class="cgField">
+<label>File yang mau dikirim (1 baris 1 file)</label>
+<div class="btnrow" style="justify-content:flex-start; margin-top:0; margin-bottom:6px;">
+<button class="pickbtn" id="cgPickFiles" type="button">Pilih file (ambil nama aja)</button>
+</div>
+<textarea id="cgFileNames" placeholder="BX101109113.DAT&#10;BX257634472.DAT&#10;BX258483497.DAT" rows="4"></textarea>
+<input id="cgFileInput" multiple="" style="display:none" type="file"/>
+</div>
+<div class="cgField">
+<label>IP / hostname tujuan (1 baris 1 tujuan)</label>
+<textarea id="cgIps" placeholder="poa-rtx-bopc&#10;10.111.67.5&#10;mkg-rtx-bopc" rows="4"></textarea>
+<div class="btnrow" style="justify-content:flex-start; margin-top:6px;">
+<button class="pickbtn" id="cgUseAllIpBtn" type="button">📥 Pakai semua IP dari Data Store</button>
+<button class="pickbtn" id="cgUseBelumIpBtn" type="button" style="border-color:var(--warn); color:var(--warn);">📥 Pakai IP toko yang "Belum"</button>
+</div>
+</div>
+<div class="cgField">
+<label>Folder tujuan (setelah \\IP\)</label>
+<input id="cgDestFolder" style="max-width:220px;" type="text" value="Import"/>
+</div>
+<button class="pickbtn" id="cgGenerateBtn" style="background:var(--accent); border-color:var(--accent); color:#000; font-weight:800;" type="button">⚙️ Generate</button>
+</div>
+<div class="panel" id="cgResultPanel" style="display:none; border-color:var(--ok);">
+<h3 style="color:var(--ok);">Hasil</h3>
+<textarea id="cgOutput" readonly="" rows="12" style="width:100%; box-sizing:border-box; background:var(--surface-2); color:var(--text); border:1px solid var(--border); padding:10px 12px; font-family:var(--mono); font-size:12.5px; white-space:pre;"></textarea>
+<div class="btnrow" style="justify-content:flex-start; margin-top:10px;">
+<button class="pickbtn" id="cgCopyBtn" type="button">📋 Copy</button>
+<button class="pickbtn" id="cgDownloadBtn" type="button" style="border-color:var(--ok); color:var(--ok);">💾 Download .bat</button>
+</div>
+</div>
+</div>
+</div>
+<script>
+const STORES = [{"code": 2, "nik": "MKG", "name": "MALL KELAPA GADING 3"}, {"code": 3, "nik": "MCL", "name": "MAL CIPUTRA"}, {"code": 8, "nik": "MKK", "name": "KOTA KASABLANKA"}, {"code": 10, "nik": "MAG", "name": "MAL ARTHA GADING"}, {"code": 11, "nik": "BUP", "name": "PLAZA BUARAN"}, {"code": 12, "nik": "KJI", "name": "KRAMAT JATI"}, {"code": 13, "nik": "LSS", "name": "LOKASARI SQUARE"}, {"code": 17, "nik": "MPP", "name": "MAL PACIFIC PLACE"}, {"code": 18, "nik": "LWM", "name": "LIVING WORLD MAL"}, {"code": 20, "nik": "CWL", "name": "CIWALK"}, {"code": 22, "nik": "PPG", "name": "PLAZA PONDOK GEDE"}, {"code": 23, "nik": "SMB", "name": "SUMMARECON BEKASI"}, {"code": 24, "nik": "CGC", "name": "CITRA GRAND CIBUBUR"}, {"code": 25, "nik": "GMM", "name": "GRAND METROPOLITAN"}, {"code": 26, "nik": "MCJ", "name": "MAL CIJANTUNG"}, {"code": 27, "nik": "PCB", "name": "PLAZA CIBUBUR"}, {"code": 29, "nik": "CCM", "name": "CIBINONG CITY MALL"}, {"code": 30, "nik": "CIM", "name": "CIPINANG INDAH MALL"}, {"code": 31, "nik": "GGP", "name": "GRAND GALAXY PARK"}, {"code": 32, "nik": "BJE", "name": "BINTAROJAYA EXCHANGE"}, {"code": 33, "nik": "BTS", "name": "BOTANI SQUARE"}, {"code": 34, "nik": "BTM", "name": "BOGOR TRADE MALL"}, {"code": 38, "nik": "SLS", "name": "SOLO SQUARE"}, {"code": 39, "nik": "PVL", "name": "PLUIT VILLAGE"}, {"code": 47, "nik": "SSB", "name": "SUPERMALL SUKABUMI"}, {"code": 49, "nik": "MOI", "name": "MALL OF INDONESIA"}, {"code": 51, "nik": "TCM", "name": "TANGERANG CITY MALL"}, {"code": 53, "nik": "CMD", "name": "CINERE MALL DEPOK"}, {"code": 56, "nik": "SQB", "name": "BALI SEMINYAK SQUARE"}, {"code": 62, "nik": "JTS", "name": "JATINANGOR SQUARE"}, {"code": 63, "nik": "NSS", "name": "N SUMMARECON SERPONG"}, {"code": 64, "nik": "LSA", "name": "LOTTE SHOPPINGAVENUE"}, {"code": 65, "nik": "KCS", "name": "KALIBATA CITY SQUARE"}, {"code": 70, "nik": "TPS", "name": "TUNJUNGAN PLAZA"}, {"code": 71, "nik": "PFT", "name": "PLAZA FESTIVAL"}, {"code": 75, "nik": "PKB", "name": "PASKAL 23"}, {"code": 81, "nik": "PVJ", "name": "PARIS VAN JAVA"}, {"code": 82, "nik": "RKR", "name": "RAMAYANA KARAWANG"}, {"code": 87, "nik": "DMD", "name": "MALL DEPOK"}, {"code": 88, "nik": "TKO", "name": "TERAS KOTA"}, {"code": 89, "nik": "EWB", "name": "E-WALK BALIKPAPAN"}, {"code": 92, "nik": "LBS", "name": "LEMBUSWANA"}, {"code": 93, "nik": "LPB", "name": "LIV PLAZA BALIKPAPAN"}, {"code": 94, "nik": "MGY", "name": "GALERIA JOGJA"}, {"code": 96, "nik": "TP6", "name": "TUNJUNGAN PLAZA 6"}, {"code": 97, "nik": "CPJ", "name": "PLAZA JATINEGARA"}, {"code": 98, "nik": "NMM", "name": "NIPAH MALL MAKASAR"}, {"code": 100, "nik": "PRD", "name": "PLAZA RENON DENPASAR"}, {"code": 101, "nik": "PLS", "name": "PLAZA SURABAYA"}, {"code": 103, "nik": "EMP", "name": "EMPORIUM MALL PLUIT"}, {"code": 104, "nik": "IMG", "name": "ICON MALL GRESIK"}, {"code": 106, "nik": "NPS", "name": "NEW PAKUWON SURABAYA"}, {"code": 107, "nik": "LHI", "name": "LIV PLAZA HARAPANIND"}, {"code": 108, "nik": "PBM", "name": "BLOK M PLAZA"}, {"code": 109, "nik": "SRM", "name": "SUNRISE MOJOKERTO"}, {"code": 110, "nik": "RMS", "name": "RAMAYANA SAMARINDA"}, {"code": 112, "nik": "TCB", "name": "TRANS CIBUBUR"}, {"code": 115, "nik": "TRB", "name": "TRANS BALI"}, {"code": 116, "nik": "GMS", "name": "GALAXY MALL SURABAYA"}, {"code": 117, "nik": "SNC", "name": "SENAYAN CITY"}, {"code": 120, "nik": "NKV", "name": "NEW KEMANG VILLAGE"}, {"code": 122, "nik": "RRM", "name": "RING ROAD MEDAN"}, {"code": 123, "nik": "MHM", "name": "MANHATTAN MEDAN"}, {"code": 124, "nik": "PMF", "name": "MEDAN FAIR"}, {"code": 125, "nik": "SNM", "name": "SUNTER MALL"}, {"code": 126, "nik": "GRM", "name": "GRESS MALL GRESIK"}, {"code": 128, "nik": "BJM", "name": "BINJAI MALL MEDAN"}, {"code": 130, "nik": "OPP", "name": "OPI PALEMBANG"}, {"code": 131, "nik": "PTC", "name": "PALEMBANG TRADE CENTER"}, {"code": 134, "nik": "IBS", "name": "ITC BSD"}, {"code": 135, "nik": "ICM", "name": "ITC CEMPAKA MAS"}, {"code": 137, "nik": "MDP", "name": "DELI PARK MEDAN"}, {"code": 138, "nik": "ANP", "name": "AYANI PONTIANAK"}, {"code": 139, "nik": "NPV", "name": "NEW PEJATEN VILLAGE"}, {"code": 140, "nik": "LWP", "name": "LIVING WORLD PEKANBARU"}, {"code": 141, "nik": "GCS", "name": "GRAND CITY SURABAYA"}, {"code": 142, "nik": "KCM", "name": "KUNINGAN CITY"}, {"code": 143, "nik": "LCK", "name": "LIPPO MALL CIKARANG"}, {"code": 144, "nik": "DMB", "name": "DUTA MAL BANJARMASIN"}, {"code": 145, "nik": "GPK", "name": "GREEN PRAMUKA"}, {"code": 146, "nik": "BMS", "name": "BIG MALL SAMARINDA"}, {"code": 147, "nik": "SKP", "name": "SKA PEKANBARU"}, {"code": 148, "nik": "LPJ", "name": "LIVING PLAZA JABABEKA"}, {"code": 152, "nik": "ELB", "name": "EKA LOKASARI BOGOR"}, {"code": 154, "nik": "RYM", "name": "RAMAYANA MAKASAR "}, {"code": 155, "nik": "NPM", "name": "NEW M PANAKUKANG MAKASAR"}, {"code": 161, "nik": "SPK", "name": "SENAYAN PARK"}, {"code": 162, "nik": "TMS", "name": "THE PARK MALL SAWANGAN"}, {"code": 166, "nik": "CRT", "name": "CITRA RAYA TANGERANG"}, {"code": 168, "nik": "SCC", "name": null}, {"code": 169, "nik": "GM2", "name": "GALAXY MALL SURABAYA 2"}, {"code": 174, "nik": "GDC", "name": "GANDARIA CITY"}, {"code": 175, "nik": "AOS", "name": "AEON SENTUL"}, {"code": 177, "nik": "MPI", "name": "MALL PURI INDAH"}, {"code": 179, "nik": "KGS", "name": "KELAPA GADING STREET"}, {"code": 180, "nik": "CG2", "name": "CITRA GARDEN STREET"}, {"code": 181, "nik": "GMC", "name": "GARAGE MALL CIREBON"}, {"code": 182, "nik": "PRS", "name": "PESANGGRAHAN STREET"}, {"code": 183, "nik": "MCR", "name": "MARGO CITY REBORN"}, {"code": 184, "nik": "GSS", "name": "GADING SERPONG STREET"}, {"code": 185, "nik": "KWS", "name": "KOTA WISATA CIBUBUR STREET"}, {"code": 186, "nik": "BSD", "name": "BUMI SERPONG DAMAI STREET"}, {"code": 187, "nik": "RDS", "name": "RADIO DALAM STREET"}, {"code": 188, "nik": "GRS", "name": "GRAHA RAYA STREET"}, {"code": 191, "nik": "CRS", "name": "CIPETE RAYA STREET"}, {"code": 193, "nik": "MMS", "name": "MELATI MAS STREET"}, {"code": 194, "nik": "TDS", "name": "TANJUNG DUREN STREET"}, {"code": 195, "nik": "VBS", "name": "VETERAN RAYA STREET"}, {"code": 197, "nik": "PIK", "name": "PANTAI INDAH KAPUK STREET"}, {"code": 198, "nik": "MSP", "name": "Mall Serpong Paradise"}, {"code": 199, "nik": "JSS", "name": "Jatisampurna Street"}, {"code": 200, "nik": "JRS", "name": "Joglo Raya Street"}, {"code": 201, "nik": "PML", "name": "Pamulang Street"}, {"code": 202, "nik": "PJS", "name": "Pajajaran Street"}, {"code": 203, "nik": "BHS", "name": "Bendungan Hilir Street"}, {"code": 204, "nik": "TMB", "name": "Transtudio Bandung"}, {"code": 205, "nik": "HMB", "name": "Hyper Mall Bekasi"}, {"code": 206, "nik": "CMC", "name": "Cilegon Center Mall"}, {"code": 207, "nik": "MSB", "name": "Mall Sumarecon Bandung"}, {"code": 208, "nik": "MTS", "name": "Manado Town Square"}, {"code": 209, "nik": "MMM", "name": "Mega Mall Manado"}, {"code": 210, "nik": "NPA", "name": "New Plaza Ambarukmo"}, {"code": 211, "nik": "NGI", "name": "New Grand Indonesia"}, {"code": 212, "nik": "NCJ", "name": "New Cibubur Junktion"}, {"code": 213, "nik": "AOB", "name": "AEON BSD"}, {"code": 214, "nik": "AOJ", "name": "AEON Jakarta"}, {"code": 215, "nik": "CPM", "name": "Central Point Medan"}, {"code": 216, "nik": "NDB", "name": "New Bali Discovery"}, {"code": 217, "nik": "BMM", "name": "BATAM MEGA MALL"}, {"code": 218, "nik": "BNH", "name": "BATAM NAGOYA HILL"}, {"code": 219, "nik": "BLM", "name": "Bali Living World Mall"}, {"code": 220, "nik": "ISB", "name": "Icon Sanur Bali"}, {"code": 221, "nik": "N21", "name": "New Level 21 Bali"}, {"code": 222, "nik": "LWK", "name": "Living World Kotawisata"}, {"code": 224, "nik": "NPB", "name": "New Pentacity Balikpapan"}, {"code": 225, "nik": "PBP", "name": null}, {"code": 226, "nik": "SKR", "name": "Supermall Karawaci Reborn"}, {"code": 227, "nik": "PMB", "name": "Pakuwon Mall Bekasi"}, {"code": 228, "nik": "NSP", "name": "New Solo Paragon"}, {"code": 229, "nik": "KRC", "name": null}, {"code": 230, "nik": "GRB", "name": "GRAND BATAM"}, {"code": 231, "nik": "CPS", "name": "Central Plaza Samarinda"}, {"code": 232, "nik": "PCS", "name": "Pekanbaru Ciputra Seraya"}, {"code": 233, "nik": "LEM", "name": "Lombok Ephicentrum Mall "}, {"code": 234, "nik": "BWB", "name": "Beach Walk Bali"}, {"code": 235, "nik": "MLM", "name": "Millenium Mall"}, {"code": 236, "nik": "NBM", "name": "New Bassura Mall"}, {"code": 237, "nik": "CEP", "name": "Central Park Mall"}, {"code": 238, "nik": "TSJ", "name": "JAMBI TOWN SQUARE"}, {"code": 239, "nik": "NGM", "name": "New Gajahmada Mall"}, {"code": 240, "nik": "RPS", "name": "Royal Plaza Surabaya"}, {"code": 241, "nik": "JCM", "name": "Jogja City Mall"}, {"code": 242, "nik": "WCJ", "name": "WTC JAMBI BATANGHARI"}, {"code": 243, "nik": "LWG", "name": "Living World Grand Wisata"}, {"code": 244, "nik": "NLP", "name": "New Lippo Puri Plaza"}, {"code": 245, "nik": "NBP", "name": "New Bandung Indah Plaza"}, {"code": 246, "nik": "MLP", "name": "Lippo Plaza Batu Malang"}, {"code": 247, "nik": "PPB", "name": "Plaza Parahyangan"}, {"code": 248, "nik": "NMY", "name": "New Malioboro Yogyakarta"}, {"code": 249, "nik": "MPB", "name": "MTC Pekanbaru"}, {"code": 250, "nik": "CMG", "name": "Citimall Gorontalo"}, {"code": 251, "nik": "DPR", "name": "Duta Pertiwi Reborn"}, {"code": 252, "nik": "PCM", "name": "Pakuwon City Mall"}, {"code": 253, "nik": "MOS", "name": "Moll of Serang"}, {"code": 254, "nik": "MTQ", "name": "Malang Town Square"}, {"code": 255, "nik": "DBB", "name": "D'Botanica Bandung"}, {"code": 256, "nik": "STP", "name": "The Park Semarang"}, {"code": 257, "nik": "SMA", "name": "Suzuya Mall Aceh"}, {"code": 258, "nik": "RCG", "name": "Ramyana Ciplaz Garut"}, {"code": 259, "nik": "BMB", "name": "Bencoolen Mall Bengkulu"}, {"code": 260, "nik": "NTA", "name": "New Taman Anggrek"}, {"code": 261, "nik": "NCS", "name": "New Cirebon Superblok"}, {"code": 262, "nik": "MAM", "name": "Mall Artos Magelang"}, {"code": 263, "nik": "MOG", "name": null}, {"code": 264, "nik": "NPI", "name": "PALEMBANG INDAH MALL"}, {"code": 265, "nik": "BCP", "name": "Basko Citymall Padang"}, {"code": 266, "nik": "POA", "name": "Premium Outlet Alam Sutera"}, {"code": 267, "nik": "PKA", "name": "PIK Avenue"}, {"code": 268, "nik": "MJT", "name": "MENARA JAKARTA"}, {"code": 269, "nik": "SCH", "name": "Sleman City Hall"}, {"code": 270, "nik": "SSM", "name": "Suzuya Siantar Mall"}, {"code": 271, "nik": "LMN", "name": "Lippo Mall Nusantara"}, {"code": 272, "nik": "CPL", "name": "Central Plaza Lampung"}, {"code": 273, "nik": "KML", "name": "Kartini Mall Lampung"}, {"code": 274, "nik": "GPM", "name": "Gaia Pontianak Mall"}, {"code": 275, "nik": "CLD", "name": "Citimall Dumai"}, {"code": 276, "nik": "LPS", "name": "Lippo Plaza Sidoarjo"}, {"code": 277, "nik": "RSJ", "name": "Roxy Square Jember"}, {"code": 278, "nik": "MST", "name": "Suzuya Tanjung Morawa"}, {"code": 279, "nik": "PMT", "name": "Pacific Mall Tegal"}, {"code": 280, "nik": "EPM", "name": "EPIWALK"}, {"code": 281, "nik": "NSM", "name": null}, {"code": 282, "nik": "MIM", "name": "MALL INDRAMAYU"}, {"code": 283, "nik": "LJP", "name": "LIPPO JEMBER PLAZA"}, {"code": 284, "nik": "SCS", "name": "SUNCITY SIDOARJO"}, {"code": 285, "nik": "KRP", "name": "Karawang Resinda Park"}, {"code": 286, "nik": "CMS", "name": "CIPUTRA MALL SEMARANG"}, {"code": 287, "nik": "SMT", "name": "SOLO MALL THE PARK"}, {"code": 288, "nik": "SPN", "name": "SEMARANG PARAGON NEW"}, {"code": 289, "nik": "NIP", "name": "NEW ICON PALEMBANG"}, {"code": 290, "nik": "NQS", "name": "NEW QUEEN SEMARANG"}, {"code": 291, "nik": "PIN", "name": "PONDOK INDAH 1"}, {"code": 292, "nik": "CTB", "name": null}, {"code": 293, "nik": "SGM", "name": "SINGKAWANG GRAND MALL"}, {"code": 294, "nik": "PSB", "name": "PAKUWON SOLO BARU"}, {"code": 295, "nik": "PZK", "name": "PLAZA KALIBATA"}, {"code": 296, "nik": "SCM", "name": "SUN CITY MADIUN"}, {"code": 297, "nik": "CWS", "name": "CIPUTRA WORLD SURABAYA"}, {"code": 298, "nik": "PAP", "name": "PLAZA ANDALAS PADANG"}, {"code": 299, "nik": "RMP", "name": "RITA MALL PURWOKERTO"}, {"code": 300, "nik": "LGL", "name": "LA VELA GREENLAKE"}, {"code": 301, "nik": "LPA", "name": "LIPPO PLAZA ACCEH"}, {"code": 302, "nik": "CTS", "name": "CITOS"}, {"code": 303, "nik": "BHB", "name": "BATAM HARBOUR BAY"}, {"code": 304, "nik": "KMM", "name": "KUTA  MANDALIKA"}, {"code": 305, "nik": "JPM", "name": "JAMBI "}, {"code": 306, "nik": "NTM", "name": "New Transmart makassar"}, {"code": 307, "nik": "NFC", "name": "New Festival citylink bandung"}, {"code": 308, "nik": "OMB", "name": null}, {"code": 309, "nik": "CTC", "name": null}, {"code": 310, "nik": "GSM", "name": "Grand sedayu Mall"}, {"code": 311, "nik": "NAS", "name": "NEW ALAM SUTERA"}, {"code": 312, "nik": "DPK", "name": null}, {"code": 313, "nik": "CMP", "name": null}, {"code": 314, "nik": "CBR", "name": null}, {"code": 315, "nik": "LLL", "name": "LUBUK LINGGAU"}, {"code": 316, "nik": "QBB", "name": "QBIG BATAM"}, {"code": 317, "nik": "NBS", "name": "NEW BINTARO STREET"}, {"code": 319, "nik": "LPK", "name": null}, {"code": 320, "nik": "PQN", "name": null}, {"code": 321, "nik": "NMB", "name": "New Metropolitan bekasi"}, {"code": 322, "nik": "MRI", "name": "MALL RATU INDAH"}, {"code": 324, "nik": "MP2", "name": "MALL PANAKUKANG 2"}, {"code": 326, "nik": "KSB", "name": "K SQUARE BATAM"}, {"code": 328, "nik": "23S", "name": "23 SEMARANG"}, {"code": 335, "nik": "HTY", "name": "HIPS TAMAN YASMIN"}, {"code": 329, "nik": "CML", "name": ""}];
+
+const IP_MAP = {2:"10.111.1.69",3:"10.111.1.133",8:"10.111.2.133",10:"10.111.3.5",11:"10.111.3.69",12:"10.111.3.133",13:"10.111.3.197",15:"10.111.4.69",17:"10.111.4.197",18:"10.111.5.5",20:"10.111.5.133",22:"10.111.6.5",23:"10.111.6.69",24:"10.111.6.133",25:"10.111.6.197",26:"10.111.7.5",27:"10.111.7.69",29:"10.111.7.197",30:"10.111.8.5",31:"10.111.8.69",32:"10.111.8.133",33:"10.111.8.197",34:"10.111.9.5",38:"10.111.10.5",39:"10.111.10.69",47:"10.111.12.69",49:"10.111.12.197",51:"10.111.13.69",53:"10.111.13.197",56:"10.111.14.133",62:"10.111.16.5",63:"10.111.16.69",64:"10.111.16.133",65:"10.111.16.197",70:"10.111.18.5",71:"10.111.18.69",75:"10.111.19.69",81:"10.111.20.197",82:"10.111.21.5",87:"10.111.22.69",88:"10.111.22.133",89:"10.111.22.197",92:"10.111.23.133",93:"10.111.23.197",94:"10.111.24.5",96:"10.111.24.133",97:"10.111.24.197",98:"10.111.25.5",100:"10.111.25.133",101:"10.111.25.197",103:"10.111.26.69",104:"10.111.26.133",106:"10.111.27.5",107:"10.111.27.69",108:"10.111.27.133",109:"10.111.27.197",110:"10.111.28.5",112:"10.111.28.133",115:"10.111.29.69",116:"10.111.29.133",117:"10.111.29.197",120:"10.111.30.133",122:"10.111.31.5",123:"10.111.31.69",124:"10.111.31.133",125:"10.111.31.197",126:"10.111.32.5",128:"10.111.32.133",130:"10.111.33.5",131:"10.111.33.69",134:"10.111.34.5",135:"10.111.34.69",137:"10.111.34.197",138:"10.111.35.5",139:"10.111.35.69",140:"10.111.35.133",141:"10.111.35.197",142:"10.111.36.5",143:"10.111.36.69",144:"10.111.36.133",145:"10.111.36.197",146:"10.111.37.5",147:"10.111.37.69",148:"10.111.37.133",152:"10.111.38.133",154:"10.111.39.5",155:"10.111.39.69",161:"10.111.40.197",162:"10.111.41.5",166:"10.111.42.5",168:"10.111.42.133",169:"10.111.42.197",174:"10.111.44.5",175:"10.111.44.69",177:"10.111.44.197",179:"10.111.45.69",180:"10.111.45.133",181:"10.111.45.197",182:"10.111.46.5",183:"10.111.38.197",184:"10.111.46.133",185:"10.111.46.197",186:"10.111.47.5",187:"10.111.47.69",188:"10.111.47.133",191:"10.111.48.69",193:"10.111.48.197",194:"10.111.49.5",195:"10.111.49.69",197:"10.111.49.197",198:"10.111.50.5",199:"10.111.50.69",200:"10.111.50.133",201:"10.111.50.197",202:"10.111.51.5",203:"10.111.51.69",204:"10.111.51.133",205:"10.111.51.197",206:"10.111.52.5",207:"10.111.52.69",208:"10.111.52.133",209:"10.111.52.197",210:"10.111.53.5",211:"10.111.53.69",212:"10.111.53.133",213:"10.111.53.197",214:"10.111.54.5",215:"10.111.54.69",216:"10.111.29.5",217:"10.111.54.197",218:"10.111.55.5",219:"10.111.55.69",220:"10.111.55.133",221:"10.111.55.197",222:"10.111.56.5",224:"10.111.56.133",225:"10.111.56.197",226:"10.111.57.5",227:"10.111.57.69",228:"10.111.57.133",229:"10.111.57.197",230:"10.111.58.5",231:"10.111.58.69",232:"10.111.58.133",233:"10.111.58.197",234:"10.111.59.5",235:"10.111.59.69",236:"10.111.59.133",237:"10.111.59.197",238:"10.111.60.5",239:"10.111.60.69",240:"10.111.60.133",241:"10.111.60.197",242:"10.111.61.5",243:"10.111.61.69",244:"10.111.61.133",245:"10.111.61.197",246:"10.111.62.5",247:"10.111.62.69",248:"10.111.62.133",249:"10.111.62.197",250:"10.111.63.5",251:"10.111.63.69",252:"10.111.63.133",253:"10.111.63.197",254:"10.111.64.5",255:"10.111.64.69",256:"10.111.64.133",257:"10.111.64.197",258:"10.111.65.5",259:"10.111.65.69",260:"10.111.65.133",261:"10.111.65.197",262:"10.111.66.5",263:"10.111.66.69",264:"10.111.66.133",265:"10.111.66.197",266:"10.111.67.5",267:"10.111.67.69",268:"10.111.67.133",269:"10.111.67.197",270:"10.111.68.5",271:"10.111.68.69",272:"10.111.68.133",273:"10.111.68.197",274:"10.111.69.5",275:"10.111.69.69",276:"10.111.69.133",277:"10.111.69.197",278:"10.111.70.5",279:"10.111.70.69",280:"10.111.70.133",281:"10.111.70.197",282:"10.111.71.5",283:"10.111.71.69",284:"10.111.71.133",285:"10.111.71.197",286:"10.111.72.5",287:"10.111.72.69",288:"10.111.72.133",289:"10.111.72.197",290:"10.111.73.5",291:"10.111.73.69",292:"10.111.73.133",293:"10.111.73.197",294:"10.111.74.5",295:"10.111.74.69",296:"10.111.74.133",297:"10.111.74.197",298:"10.111.75.5",299:"10.111.75.69",300:"10.111.75.133",301:"10.111.75.197",302:"10.111.76.5",303:"10.111.76.69",304:"10.111.76.133",305:"10.111.76.197",306:"10.111.77.5",307:"10.111.77.69",308:"10.111.77.133",309:"10.111.77.197",310:"10.111.78.5",311:"10.111.78.69",312:"10.111.78.133",313:"10.111.78.197",314:"10.111.79.5",315:"10.111.79.69",316:"10.111.79.133",317:"10.111.79.197",319:"10.111.80.69",320:"10.111.80.133",321:"10.111.80.197",322:"10.111.81.5",324:"10.111.81.133",326:"10.111.82.5",327:"10.111.82.69",328:"10.111.82.133",329:"10.111.82.197",333:"10.111.83.197",334:"10.111.84.5",335:"10.111.84.69",336:"10.111.84.133",337:"10.111.84.197",501:"10.110.60.25",502:"10.111.1.66",5237:"10.111.59.194"};
+STORES.forEach(s => { if(IP_MAP[s.code]) s.ip = IP_MAP[s.code]; });
+
+let collected = {};
+let customStores = [];
+let overrides = {};
+let filter = 'semua';
+let search = '';
+let lastVisibleRows = [];
+let fileHandle = null;
+const FS_SUPPORTED = 'showSaveFilePicker' in window;
+
+function applyOverrides(){
+  Object.keys(overrides).forEach(code => {
+    const s = STORES.find(x => String(x.code) === String(code));
+    if(!s) return;
+    const ov = overrides[code];
+    if(ov.name !== undefined) s.name = ov.name;
+    if(ov.nik !== undefined) s.nik = ov.nik;
+    if(ov.note !== undefined) s.note = ov.note;
+    if(ov.ip !== undefined){ if(ov.ip) s.ip = ov.ip; else delete s.ip; }
+    if(ov.openDate !== undefined){ if(ov.openDate) s.openDate = ov.openDate; else delete s.openDate; }
+    s.archived = !!ov.archived;
+  });
+}
+
+// --- simpan FileSystemHandle di IndexedDB biar inget file yang dipilih ---
+function idbGet(key){
+  return new Promise((resolve) => {
+    const req = indexedDB.open('tlog-tracker-db', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => {
+      const tx = req.result.transaction('handles','readonly');
+      const g = tx.objectStore('handles').get(key);
+      g.onsuccess = () => resolve(g.result || null);
+      g.onerror = () => resolve(null);
+    };
+    req.onerror = () => resolve(null);
+  });
+}
+function idbSet(key, val){
+  return new Promise((resolve) => {
+    const req = indexedDB.open('tlog-tracker-db', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => {
+      const tx = req.result.transaction('handles','readwrite');
+      tx.objectStore('handles').put(val, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    };
+    req.onerror = () => resolve(false);
+  });
+}
+
+function mergeCustomStores(){
+  customStores.forEach(cs => { if(!STORES.find(s => s.code === cs.code)) STORES.push(cs); });
+  STORES.forEach(s => { if(!s.ip && IP_MAP[s.code]) s.ip = IP_MAP[s.code]; });
+}
+
+async function readFileData(handle){
+  const file = await handle.getFile();
+  const text = await file.text();
+  if(!text.trim()) return { collected:{}, customStores:[], overrides:{} };
+  try{ return JSON.parse(text); } catch(e){ return { collected:{}, customStores:[], overrides:{} }; }
+}
+
+async function writeFileData(){
+  const writable = await fileHandle.createWritable();
+  await writable.write(JSON.stringify({ collected, customStores, overrides }, null, 2));
+  await writable.close();
+}
+
+function setFileStatus(msg){ document.getElementById('fileStatus').textContent = msg; }
+
+async function tryAutoConnect(){
+  if(!FS_SUPPORTED) return false;
+  try{
+    const saved = await idbGet('fileHandle');
+    if(!saved) return false;
+    const perm = await saved.queryPermission({mode:'readwrite'});
+    if(perm === 'granted'){
+      try{
+        fileHandle = saved;
+        const data = await readFileData(fileHandle);
+        collected = data.collected || {};
+        customStores = data.customStores || [];
+        overrides = data.overrides || {};
+        mergeCustomStores();
+        applyOverrides();
+        setFileStatus('Terhubung ke file: ' + fileHandle.name);
+        return true;
+      }catch(readErr){
+        await idbSet('fileHandle', null);
+        fileHandle = null;
+        setFileStatus('File lama gak ketemu (mungkin pindah/ke-sync ulang). Klik "🔍 Cari file yang udah ada" buat nyambungin lagi.');
+        return false;
+      }
+    }
+    // izin belum dikonfirmasi ulang browser, minta klik tombol connect lagi
+    fileHandle = saved;
+    setFileStatus('Klik "Hubungkan file" buat lanjutin ke ' + saved.name);
+    return false;
+  }catch(e){ return false; }
+}
+
+document.getElementById('recoverBtn').addEventListener('click', async () => {
+  const rc = localStorage.getItem('ziptoko-collected');
+  const rs = localStorage.getItem('ziptoko-stores');
+  const ro = localStorage.getItem('ziptoko-overrides');
+
+  if(!rc && !rs && !ro){
+    alert('Gak ada data tersimpan di browser ini (localStorage kosong).');
+    return;
+  }
+
+  let jumlahCollected = 0, jumlahStore = 0;
+  try{ jumlahCollected = rc ? Object.keys(JSON.parse(rc)).length : 0; }catch(e){}
+  try{ jumlahStore = rs ? JSON.parse(rs).length : 0; }catch(e){}
+
+  const ok = confirm(
+    'Ketemu data di browser: ' + jumlahCollected + ' toko ditandai kekumpul, ' + jumlahStore + ' toko manual.\n\n' +
+    'Ini bakal TIMPA data yang lagi ke-load sekarang (di tabel & di file kalau lagi terhubung) dengan data dari browser ini. Lanjut?'
+  );
+  if(!ok) return;
+
+  try{ collected = rc ? JSON.parse(rc) : {}; }catch(e){ collected = {}; }
+  customStores = [];
+  try{ if(rs){ customStores = JSON.parse(rs); mergeCustomStores(); } }catch(e){}
+  try{ overrides = ro ? JSON.parse(ro) : {}; applyOverrides(); }catch(e){}
+
+  await save();
+  render();
+  setFileStatus('Data dari browser berhasil dipulihkan' + (fileHandle ? ' dan disimpen ke file: ' + fileHandle.name : '.'));
+});
+
+document.getElementById('connectFileBtn').addEventListener('click', async () => {
+  if(!FS_SUPPORTED){
+    alert('Browser ini gak dukung simpan-ke-file (pakai Chrome/Edge/Brave versi desktop). Data tetap kesimpen otomatis di browser.');
+    return;
+  }
+  try{
+    let handle = fileHandle;
+    if(handle){
+      try{
+        const perm = await handle.requestPermission({mode:'readwrite'});
+        if(perm !== 'granted') handle = null;
+      }catch(permErr){
+        // file lama pindah/kehapus/ke-rename (sering kejadian di folder OneDrive/Google Drive)
+        await idbSet('fileHandle', null);
+        fileHandle = null;
+        handle = null;
+        setFileStatus('File lama gak ketemu (mungkin pindah/ke-sync ulang). Klik "🔍 Cari file yang udah ada" buat nyambungin lagi ke file data kamu, atau klik tombol ini lagi buat bikin file baru.');
+        return;
+      }
+    }
+    if(!handle){
+      handle = await window.showSaveFilePicker({
+        suggestedName: 'tlog-tracker-data.json',
+        types: [{ description:'JSON', accept:{'application/json':['.json']} }]
+      });
+    }
+    fileHandle = handle;
+    await idbSet('fileHandle', handle);
+    const data = await readFileData(fileHandle);
+    if(Object.keys(data.collected||{}).length || (data.customStores||[]).length){
+      collected = data.collected || collected;
+      customStores = data.customStores || customStores;
+      overrides = data.overrides || overrides;
+      mergeCustomStores();
+      applyOverrides();
+    } else {
+      await writeFileData();
+    }
+    setFileStatus('Terhubung ke file: ' + fileHandle.name);
+    render();
+  }catch(e){
+    if(e.name !== 'AbortError') setFileStatus('Gagal hubungin file: ' + e.message);
+  }
+});
+
+document.getElementById('findFileBtn').addEventListener('click', async () => {
+  if(!('showOpenFilePicker' in window)){
+    alert('Browser ini gak dukung fitur ini. Pakai Chrome/Edge/Brave versi desktop.');
+    return;
+  }
+  try{
+    const [handle] = await window.showOpenFilePicker({
+      types: [{ description:'JSON', accept:{'application/json':['.json']} }],
+      multiple: false
+    });
+    const data = await readFileData(handle);
+    fileHandle = handle;
+    await idbSet('fileHandle', handle);
+    collected = data.collected || {};
+    customStores = data.customStores || [];
+    overrides = data.overrides || {};
+    mergeCustomStores();
+    applyOverrides();
+    setFileStatus('Terhubung ke file: ' + fileHandle.name);
+    render();
+  }catch(e){
+    if(e.name !== 'AbortError') setFileStatus('Gagal buka file: ' + e.message);
+  }
+});
+
+async function load(){
+  const connected = await tryAutoConnect();
+  if(!connected){
+    try{
+      const rs = localStorage.getItem('ziptoko-stores');
+      if(rs){ customStores = JSON.parse(rs); mergeCustomStores(); }
+    }catch(e){}
+    try{
+      const r = localStorage.getItem('ziptoko-collected');
+      if(r) collected = JSON.parse(r);
+    }catch(e){ collected = {}; }
+    try{
+      const ov = localStorage.getItem('ziptoko-overrides');
+      if(ov) overrides = JSON.parse(ov);
+    }catch(e){ overrides = {}; }
+    applyOverrides();
+    if(!FS_SUPPORTED) setFileStatus('Browser ini gak dukung simpan-ke-file. Data disimpan otomatis di browser (localStorage).');
+  }
+  render();
+}
+
+async function save(){
+  if(fileHandle){
+    try{ await writeFileData(); return; }
+    catch(e){ setStatus('Gagal nyimpen ke file: ' + e.message); }
+  }
+  try{
+    localStorage.setItem('ziptoko-collected', JSON.stringify(collected));
+    localStorage.setItem('ziptoko-stores', JSON.stringify(customStores));
+    localStorage.setItem('ziptoko-overrides', JSON.stringify(overrides));
+  }
+  catch(e){ setStatus('Gagal nyimpen status: ' + e.message); }
+}
+
+function setStatus(msg){ document.getElementById('status').textContent = msg; }
+
+function isPending(s){
+  if(!s.openDate) return false;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const od = new Date(s.openDate); od.setHours(0,0,0,0);
+  return od > today;
+}
+
+function render(){
+  const activeStores = STORES.filter(s => !s.archived && !isPending(s));
+  const total = activeStores.length;
+  const done = activeStores.filter(s => collected[String(s.code)]).length;
+  document.getElementById('countText').innerHTML = done + '<span> / ' + total + ' kekumpul</span>';
+  document.getElementById('barFill').style.width = (total? (done/total*100) : 0) + '%';
+
+  const q = search.trim().toLowerCase();
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+
+  const source = filter === 'arsip' ? STORES.filter(s => s.archived)
+    : filter === 'catatan' ? STORES.filter(s => s.note && s.note.trim())
+    : filter === 'akanbuka' ? STORES.filter(s => isPending(s) && !s.archived)
+    : activeStores;
+  const visibleRows = [];
+
+  source.slice().sort((a, b) => a.code - b.code).filter(s => {
+    const isDone = !!collected[String(s.code)];
+    if(filter === 'sudah' && !isDone) return false;
+    if(filter === 'belum' && isDone) return false;
+    if(q && !(String(s.code).includes(q) || (s.nik||'').toLowerCase().includes(q) || (s.name||'').toLowerCase().includes(q) || (s.note||'').toLowerCase().includes(q) || (s.ip||'').toLowerCase().includes(q))) return false;
+    return true;
+  }).forEach(s => {
+    visibleRows.push(s);
+    const rec = collected[String(s.code)];
+    const tr = document.createElement('tr');
+    tr.className = 'row' + (s.archived ? ' archived' : '');
+    tr.innerHTML = `<td class="code">${s.code}</td><td>${s.nik||''}</td><td>${s.name||''}${s.note ? `<div class="noteText">📝 ${s.note}</div>` : ''}${isPending(s) ? `<div class="noteText" style="color:var(--accent);">🗓️ Buka: ${new Date(s.openDate).toLocaleDateString('id-ID')}</div>` : ''}</td>` +
+      `<td class="meta ip-cell">${s.ip||'-'}</td>` +
+      `<td><span class="badge ${rec?'ok':'no'}">${rec?'SUDAH':'BELUM'}</span></td>` +
+      `<td class="meta">${rec ? new Date(rec.date).toLocaleDateString('id-ID') + (rec.source==='manual'?' (manual)':'') : '-'}</td>` +
+      `<td><button class="actionBtn copyBtn" data-code="${s.code}" type="button">📋</button><button class="actionBtn editBtn" data-code="${s.code}" type="button">✏️</button><button class="actionBtn archBtn" data-code="${s.code}" type="button">${s.archived ? '♻️' : '📦'}</button></td>`;
+    tr.querySelector('.copyBtn').addEventListener('click', e => {
+      e.stopPropagation();
+      copyText(`${s.code} - ${s.nik||''}`);
+    });
+    tr.querySelector('.editBtn').addEventListener('click', e => {
+      e.stopPropagation();
+      const store = STORES.find(x => String(x.code) === String(s.code));
+      const newName = prompt('Nama toko:', store.name || '');
+      if(newName === null) return;
+      const newNik = prompt('NIK:', store.nik || '');
+      if(newNik === null) return;
+      let newIp = store.ip || '';
+      if(store.ip){
+        const input = prompt('IP tujuan (\\\\IP\\Import):', store.ip);
+        if(input === null) return;
+        newIp = input;
+      }
+      const newNote = prompt('Catatan (misal: "midnight sale, closing lama tiap Sabtu"):', store.note || '');
+      if(newNote === null) return;
+
+      let newOpenDate = store.openDate;
+      if(isPending(store)){
+        const input = prompt('Tanggal opening (format YYYY-MM-DD), kosongin kalau mau langsung dibuka sekarang:', store.openDate || '');
+        if(input === null) return;
+        newOpenDate = input.trim() || undefined;
+      }
+
+      store.name = newName; store.nik = newNik; store.note = newNote;
+      if(newIp.trim()) store.ip = newIp.trim(); else delete store.ip;
+      if(newOpenDate) store.openDate = newOpenDate; else delete store.openDate;
+      overrides[s.code] = Object.assign({}, overrides[s.code], { name: newName, nik: newNik, note: newNote, ip: store.ip, archived: !!store.archived, openDate: newOpenDate });
+      save(); render();
+    });
+    tr.querySelector('.archBtn').addEventListener('click', e => {
+      e.stopPropagation();
+      const store = STORES.find(x => String(x.code) === String(s.code));
+      store.archived = !store.archived;
+      overrides[s.code] = Object.assign({}, overrides[s.code], { archived: store.archived });
+      save(); render();
+    });
+    tr.onclick = () => {
+      const key = String(s.code);
+      if(collected[key]) delete collected[key];
+      else collected[key] = { date: new Date().toISOString(), source: 'manual' };
+      save(); render();
+    };
+    tbody.appendChild(tr);
+  });
+
+  lastVisibleRows = visibleRows;
+}
+
+function copyText(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(
+      () => setStatus('Kesalin: ' + text.split('\n')[0] + (text.includes('\n') ? ' (+' + (text.split('\n').length-1) + ' lagi)' : '')),
+      () => fallbackCopy(text)
+    );
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try{ document.execCommand('copy'); setStatus('Kesalin ke clipboard.'); }
+  catch(e){ setStatus('Gagal copy: ' + e.message); }
+  document.body.removeChild(ta);
+}
+
+document.getElementById('copyAllBtn').addEventListener('click', () => {
+  if(!lastVisibleRows.length){ setStatus('Gak ada data buat di-copy.'); return; }
+  const text = lastVisibleRows.map(s => `${s.code} - ${s.nik||''}`).join('\n');
+  copyText(text);
+});
+
+document.getElementById('waGenBtn').addEventListener('click', () => {
+  const raw = document.getElementById('waInput').value;
+  const codes = raw.split(/[,\s]+/).map(x => x.trim()).filter(Boolean);
+  const waResult = document.getElementById('waResult');
+
+  if(!codes.length){
+    waResult.style.display = 'block';
+    waResult.innerHTML = '<div style="color:var(--warn);">Kode-nya kosong, paste dulu kode yang ditanyain.</div>';
+    return;
+  }
+
+  const done = [], belum = [], gakDikenal = [];
+  codes.forEach(c => {
+    const store = STORES.find(s => String(s.code) === String(c));
+    if(!store){ gakDikenal.push(c); return; }
+    if(collected[String(store.code)]) done.push(String(store.code));
+    else belum.push(String(store.code));
+  });
+
+  let html = '';
+  if(done.length){
+    const text = done.join(', ') + ' done';
+    html += `<div style="margin-bottom:10px;"><div style="color:var(--ok); margin-bottom:4px;">✅ Siap kirim (${done.length} done):</div>
+      <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-family:var(--mono); font-size:13px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <span id="waTextDone">${text}</span>
+        <button class="actionBtn" id="waCopyDone" type="button" style="white-space:nowrap;">📋 Copy</button>
+      </div></div>`;
+  }
+  if(belum.length){
+    html += `<div style="margin-bottom:10px;"><div style="color:var(--bad); margin-bottom:4px;">⚠️ Belum done, jangan diklaim dulu: ${belum.join(', ')}</div></div>`;
+  }
+  if(gakDikenal.length){
+    html += `<div style="color:var(--warn);">❓ Kode gak dikenal / gak ada di Data Store: ${gakDikenal.join(', ')}</div>`;
+  }
+  if(!done.length && !belum.length && !gakDikenal.length){
+    html = '<div style="color:var(--text-dim);">Gak ada kode valid yang bisa dicek.</div>';
+  }
+
+  waResult.style.display = 'block';
+  waResult.innerHTML = html;
+
+  const copyBtn = document.getElementById('waCopyDone');
+  if(copyBtn){
+    copyBtn.addEventListener('click', () => {
+      copyText(document.getElementById('waTextDone').textContent);
+    });
+  }
+});
+
+function loadExcelJS(){
+  return new Promise((resolve, reject) => {
+    if(typeof ExcelJS !== 'undefined'){ resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Gagal load library Excel'));
+    document.head.appendChild(s);
+  });
+}
+
+document.getElementById('exportBackupBtn').addEventListener('click', async () => {
+  setStatus('Nyiapin backup data...');
+  try{
+    // Pastikan data terbaru juga tersimpan ke file yang sedang terhubung.
+    if(fileHandle){
+      try{ await writeFileData(); }
+      catch(e){
+        setStatus('Backup tetap dibuat, tapi gagal update file terhubung: ' + e.message);
+      }
+    }
+
+    // Format dibuat sama persis dengan file yang dipakai fitur "Hubungkan file",
+    // jadi hasil backup bisa langsung dipakai lagi lewat "Cari file yang udah ada".
+    const backupData = { collected, customStores, overrides };
+    const json = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const stamp = now.getFullYear() + '' + pad(now.getMonth()+1) + '' + pad(now.getDate()) + '-' + pad(now.getHours()) + '' + pad(now.getMinutes()) + '' + pad(now.getSeconds());
+    a.href = url;
+    a.download = 'tlog-tracker-backup-' + stamp + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    const jumlahCollected = Object.keys(collected || {}).length;
+    const jumlahCustom = (customStores || []).length;
+    setStatus('Backup berhasil di-export: ' + a.download + ' (' + jumlahCollected + ' status, ' + jumlahCustom + ' toko manual)');
+  }catch(e){
+    setStatus('Gagal export backup: ' + e.message);
+  }
+});
+
+document.getElementById('exportExcelBtn').addEventListener('click', async () => {
+  setStatus('Nyiapin Excel...');
+  try{
+    await loadExcelJS();
+  }catch(e){
+    setStatus('Gagal export: library Excel gagal kemuat (cek koneksi internet).');
+    return;
+  }
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Data Store');
+  sheet.columns = [
+    { header: 'Code', key: 'code', width: 10 },
+    { header: 'NIK', key: 'nik', width: 18 },
+    { header: 'Nama Toko', key: 'nama', width: 32 }
+  ];
+
+  STORES.slice().sort((a,b) => a.code - b.code).forEach(s => {
+    sheet.addRow({
+      code: String(s.code).toUpperCase(),
+      nik: (s.nik || '').toUpperCase(),
+      nama: (s.name || '').toUpperCase()
+    });
+  });
+
+  sheet.eachRow(row => {
+    row.eachCell(cell => {
+      cell.font = { bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Data store terupdate.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  setStatus('Excel ke-export: Data store terupdate.xlsx');
+});
+
+document.getElementById('search').addEventListener('input', e => { search = e.target.value; render(); });
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active'); filter = t.dataset.f; render();
+  });
+});
+
+const drop = document.getElementById('drop');
+const folderInput = document.getElementById('folderInput');
+const filesInput = document.getElementById('filesInput');
+document.getElementById('pickFolder').addEventListener('click', () => { folderInput.value = ''; folderInput.click(); });
+document.getElementById('pickFiles').addEventListener('click', () => filesInput.click());
+folderInput.addEventListener('change', e => processFiles([...e.target.files]));
+filesInput.addEventListener('change', e => processFiles([...e.target.files]));
+
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+drop.addEventListener('drop', async e => {
+  e.preventDefault(); drop.classList.remove('drag');
+  const items = e.dataTransfer.items;
+  let files = [];
+  if(items && items.length && items[0].webkitGetAsEntry){
+    for(const it of items){
+      const entry = it.webkitGetAsEntry();
+      if(entry) files = files.concat(await readEntry(entry));
+    }
+  } else {
+    files = [...e.dataTransfer.files];
+  }
+  processFiles(files);
+});
+
+function readEntry(entry){
+  return new Promise(resolve => {
+    if(entry.isFile){
+      entry.file(f => resolve([f]), () => resolve([]));
+    } else if(entry.isDirectory){
+      const reader = entry.createReader();
+      let all = [];
+      const readBatch = () => {
+        reader.readEntries(async (entries) => {
+          if(!entries.length){ resolve(all); return; }
+          for(const en of entries) all = all.concat(await readEntry(en));
+          readBatch();
+        }, () => resolve(all));
+      };
+      readBatch();
+    } else resolve([]);
+  });
+}
+
+function parseNama(baseName){
+  const m = baseName.match(/^T(\d)(\d{2})(\d{2})(\d{4})$/);
+  if(m){
+    const tahun = 2020 + parseInt(m[1],10);
+    const bulan = parseInt(m[2],10);
+    const hari = parseInt(m[3],10);
+    let kodeToko = m[4].replace(/^0+/, '');
+    if(kodeToko==='') kodeToko='0';
+
+    // Validasi tanggal secara nyata; Date() sendiri bisa menormalisasi
+    // tanggal invalid seperti 31 Februari menjadi tanggal lain.
+    const daysInMonth = new Date(tahun, bulan, 0).getDate();
+    const validDate = bulan >= 1 && bulan <= 12 && hari >= 1 && hari <= daysInMonth;
+    if(!validDate){
+      return { ok:false, reason:'TANGGAL NAMA FILE TIDAK VALID', kodeToko, tahun, bulan, hari };
+    }
+
+    return { ok:true, kodeToko, tahun, bulan, hari };
+  }
+
+  return { ok:false, reason:'FORMAT NAMA SALAH', kodeToko:'' };
+}
+
+function escapeHtml(value){
+  return String(value ?? '').replace(/[&<>'"]/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;'
+  }[ch]));
+}
+
+async function processFiles(fileList){
+  const zips = fileList.filter(f => f.name.toLowerCase().endsWith('.zip'));
+  if(!zips.length){ setStatus('Ga nemu file .zip di folder/file yang dipilih.'); return; }
+
+  const now = new Date().toISOString();
+  let baru = 0, adaSebelumnya = 0, dilewati = 0;
+  const bermasalahTgl = [];
+  const bermasalahUk = [];
+  const bermasalahUnknown = [];
+  const bermasalahBuka = [];
+
+  zips.forEach(f => {
+    const baseName = f.name.replace(/\.zip$/i, '');
+    const info = parseNama(baseName);
+
+    // Jangan pernah memasukkan ZIP dengan nama/tanggal yang invalid ke status
+    // collected. Sebelumnya file invalid masih bisa ikut ditandai SUDAH.
+    if(!info.ok){
+      bermasalahTgl.push(f.name + ' => ' + info.reason);
+      dilewati++;
+      return;
+    }
+
+    const namaDate = new Date(info.tahun, info.bulan - 1, info.hari);
+    const mtime = new Date(f.lastModified);
+    if(Number.isNaN(mtime.getTime())){
+      bermasalahTgl.push(f.name + ' => TANGGAL FILE TIDAK VALID');
+      dilewati++;
+      return;
+    }
+
+    const sameDay = namaDate.toDateString() === mtime.toDateString();
+    if(!sameDay){
+      // Tetap beri warning, tetapi tanggal modified yang berbeda tidak otomatis
+      // membuat ZIP invalid karena file bisa saja dipindah/disalin antar media.
+      bermasalahTgl.push(f.name + ' => BEDA (nama: ' + namaDate.toLocaleDateString('id-ID') + ', file: ' + mtime.toLocaleDateString('id-ID') + ')');
+    }
+
+    if(f.size < 2048){
+      bermasalahUk.push(f.name + ' => ' + (f.size/1024).toFixed(1) + ' KB');
+    }
+
+    const key = info.kodeToko;
+    const store = STORES.find(s => String(s.code) === String(key));
+
+    // Kode toko yang tidak dikenal hanya masuk daftar warning, bukan collected.
+    if(!store){
+      bermasalahUnknown.push(f.name + ' => kode ' + key + ' gak ada di Data Store');
+      dilewati++;
+      return;
+    }
+
+    // Toko yang belum opening tidak boleh dianggap sudah terkumpul.
+    if(isPending(store)){
+      bermasalahBuka.push(f.name + ' => toko ' + key + ' belum buka (' + new Date(store.openDate).toLocaleDateString('id-ID') + ')');
+      dilewati++;
+      return;
+    }
+
+    if(collected[key]) adaSebelumnya++;
+    else {
+      collected[key] = { date: now, source: f.name };
+      baru++;
+    }
+  });
+
+  await save();
+  render();
+
+  document.getElementById('lastScan').textContent =
+    'Scan terakhir: ' + zips.length + ' file zip - baru ' + baru + ', sudah ada ' + adaSebelumnya + ', dilewati ' + dilewati;
+  setStatus('');
+
+  const panelTgl = document.getElementById('panelTgl');
+  const listTgl = document.getElementById('listTgl');
+  if(bermasalahTgl.length){
+    panelTgl.style.display = 'block';
+    listTgl.innerHTML = bermasalahTgl.map(x => '<li>' + escapeHtml(x) + '</li>').join('');
+  } else panelTgl.style.display = 'none';
+
+  const panelUk = document.getElementById('panelUk');
+  const listUk = document.getElementById('listUk');
+  if(bermasalahUk.length){
+    panelUk.style.display = 'block';
+    listUk.innerHTML = bermasalahUk.map(x => '<li>' + escapeHtml(x) + '</li>').join('');
+  } else panelUk.style.display = 'none';
+
+  const panelUnknown = document.getElementById('panelUnknown');
+  const listUnknown = document.getElementById('listUnknown');
+  if(bermasalahUnknown.length){
+    panelUnknown.style.display = 'block';
+    listUnknown.innerHTML = bermasalahUnknown.map(x => '<li>' + escapeHtml(x) + '</li>').join('');
+  } else panelUnknown.style.display = 'none';
+
+  // Panel tambahan untuk toko yang belum opening.
+  let panelBuka = document.getElementById('panelBuka');
+  if(!panelBuka){
+    panelBuka = document.createElement('div');
+    panelBuka.className = 'panel warn';
+    panelBuka.id = 'panelBuka';
+    panelBuka.innerHTML = '<h3>🏪 Toko Belum Buka</h3><ul id="listBuka"></ul>';
+    document.getElementById('panelUnknown').after(panelBuka);
+  }
+  const listBuka = document.getElementById('listBuka');
+  if(bermasalahBuka.length){
+    panelBuka.style.display = 'block';
+    listBuka.innerHTML = bermasalahBuka.map(x => '<li>' + escapeHtml(x) + '</li>').join('');
+  } else panelBuka.style.display = 'none';
+}
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if(confirm('Yakin mau reset semua status kekumpul? Ini ga bisa dibalikin.')){
+    collected = {}; save(); render();
+    document.getElementById('lastScan').textContent = 'Belum ada scan zip.';
+    document.getElementById('panelTgl').style.display = 'none';
+    document.getElementById('panelUk').style.display = 'none';
+    document.getElementById('panelUnknown').style.display = 'none';
+  }
+});
+
+document.getElementById('openToday').addEventListener('change', e => {
+  document.getElementById('newStoreOpenDate').disabled = e.target.checked;
+});
+
+document.getElementById('addStoreBtn').addEventListener('click', async () => {
+  const codeVal = document.getElementById('newStoreCode').value;
+  const nikVal = document.getElementById('newStoreNik').value;
+  const nameVal = document.getElementById('newStoreName').value;
+  const ipVal = document.getElementById('newStoreIp').value;
+  const openTodayChecked = document.getElementById('openToday').checked;
+  const openDateVal = document.getElementById('newStoreOpenDate').value;
+  
+  const code = parseInt(codeVal, 10);
+  const nik = nikVal.trim().toUpperCase();
+  const name = nameVal.trim();
+  const ip = ipVal.trim();
+  
+  if(!code || !nik || !name){
+    alert('Code, NIK, dan Nama Toko harus diisi.');
+    return;
+  }
+  
+  if(STORES.find(s => s.code === code)){
+    alert('Toko dengan Code ' + code + ' sudah ada.');
+    return;
+  }
+
+  if(!openTodayChecked && !openDateVal){
+    alert('Pilih tanggal opening, atau centang "Buka hari ini".');
+    return;
+  }
+  
+  const newStore = { code, nik, name };
+  if(ip) newStore.ip = ip;
+  if(!openTodayChecked && openDateVal) newStore.openDate = openDateVal;
+  STORES.push(newStore);
+  customStores.push(newStore);
+  await save();
+
+  document.getElementById('newStoreCode').value = '';
+  document.getElementById('newStoreNik').value = '';
+  document.getElementById('newStoreName').value = '';
+  document.getElementById('newStoreIp').value = '';
+  document.getElementById('newStoreOpenDate').value = '';
+  document.getElementById('openToday').checked = true;
+  document.getElementById('newStoreOpenDate').disabled = true;
+  render();
+});
+
+document.querySelectorAll('.pagetab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.pagetab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('page-' + t.dataset.page).classList.add('active');
+  });
+});
+
+document.getElementById('cgPickFiles').addEventListener('click', () => {
+  document.getElementById('cgFileInput').click();
+});
+document.getElementById('cgFileInput').addEventListener('change', (e) => {
+  const names = Array.from(e.target.files).map(f => f.name);
+  const ta = document.getElementById('cgFileNames');
+  const existing = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+  const merged = Array.from(new Set(existing.concat(names)));
+  ta.value = merged.join('\n');
+  e.target.value = '';
+});
+
+document.getElementById('cgUseAllIpBtn').addEventListener('click', () => {
+  const ips = STORES.filter(s => s.ip && !s.archived).sort((a,b) => a.code - b.code).map(s => s.ip);
+  if(!ips.length){ setStatus('Gak ada toko yang punya IP.'); return; }
+  document.getElementById('cgIps').value = ips.join('\n');
+  setStatus('IP dari ' + ips.length + ' toko dimasukin ke daftar tujuan.');
+});
+
+document.getElementById('cgUseBelumIpBtn').addEventListener('click', () => {
+  const ips = STORES.filter(s => s.ip && !s.archived && !isPending(s) && !collected[String(s.code)])
+    .sort((a,b) => a.code - b.code).map(s => s.ip);
+  if(!ips.length){ setStatus('Gak ada toko "Belum" yang punya IP.'); return; }
+  document.getElementById('cgIps').value = ips.join('\n');
+  setStatus('IP dari ' + ips.length + ' toko yang belum kekumpul dimasukin ke daftar tujuan.');
+});
+
+document.getElementById('cgGenerateBtn').addEventListener('click', () => {
+  const srcPath = document.getElementById('cgSourcePath').value.trim().replace(/\\+$/, '');
+  const files = document.getElementById('cgFileNames').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const ips = document.getElementById('cgIps').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const destFolder = document.getElementById('cgDestFolder').value.trim().replace(/^\\+|\\+$/g, '') || 'Import';
+
+  if(!srcPath || !files.length || !ips.length){
+    alert('Isi path sumber, minimal 1 nama file, dan minimal 1 IP/hostname tujuan dulu.');
+    return;
+  }
+
+  const lines = [];
+  ips.forEach(ip => {
+    files.forEach(fn => {
+      lines.push('copy "' + srcPath + '\\' + fn + '" "\\\\' + ip + '\\' + destFolder + '\\"');
+    });
+  });
+
+  document.getElementById('cgOutput').value = lines.join('\r\n');
+  document.getElementById('cgResultPanel').style.display = 'block';
+});
+
+document.getElementById('cgCopyBtn').addEventListener('click', () => {
+  const ta = document.getElementById('cgOutput');
+  if(!ta.value){ return; }
+  ta.select();
+  navigator.clipboard.writeText(ta.value).then(() => {
+    setStatus('Command ke-copy ke clipboard.');
+  }).catch(() => { document.execCommand('copy'); });
+});
+
+document.getElementById('cgDownloadBtn').addEventListener('click', () => {
+  const content = document.getElementById('cgOutput').value;
+  if(!content) return;
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'copy-command.bat';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+});
+
+load();
+</script>
+</body></html>
