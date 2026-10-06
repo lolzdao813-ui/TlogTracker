@@ -353,8 +353,29 @@ function mergeCustomStores(){
 async function readFileData(handle){
   const file = await handle.getFile();
   const text = await file.text();
-  if(!text.trim()) return { collected:{}, customStores:[], overrides:{} };
-  try{ return JSON.parse(text); } catch(e){ return { collected:{}, customStores:[], overrides:{} }; }
+  if(!text.trim()) return { stores:[], collected:{}, customStores:[], overrides:{} };
+  try{
+    const data = JSON.parse(text);
+    return {
+      stores: Array.isArray(data.stores) ? data.stores : [],
+      collected: data.collected || {},
+      customStores: Array.isArray(data.customStores) ? data.customStores : [],
+      overrides: data.overrides || {}
+    };
+  }catch(e){
+    return { stores:[], collected:{}, customStores:[], overrides:{} };
+  }
+}
+
+function applyFileData(data){
+  if(Array.isArray(data.stores) && data.stores.length){
+    STORES.splice(0, STORES.length, ...data.stores);
+  }
+  collected = data.collected || {};
+  customStores = data.customStores || [];
+  overrides = data.overrides || {};
+  mergeCustomStores();
+  applyOverrides();
 }
 
 async function writeFileData(){
@@ -390,11 +411,7 @@ async function tryAutoConnect(){
       try{
         fileHandle = saved;
         const data = await readFileData(fileHandle);
-        collected = data.collected || {};
-        customStores = data.customStores || [];
-        overrides = data.overrides || {};
-        mergeCustomStores();
-        applyOverrides();
+        applyFileData(data);
         setFileStatus('Terhubung ke file: ' + fileHandle.name);
         return true;
       }catch(readErr){
@@ -471,11 +488,7 @@ document.getElementById('connectFileBtn').addEventListener('click', async () => 
     await idbSet('fileHandle', handle);
     const data = await readFileData(fileHandle);
     if(Object.keys(data.collected||{}).length || (data.customStores||[]).length){
-      collected = data.collected || collected;
-      customStores = data.customStores || customStores;
-      overrides = data.overrides || overrides;
-      mergeCustomStores();
-      applyOverrides();
+      applyFileData(data);
     } else {
       await writeFileData();
     }
@@ -509,11 +522,7 @@ document.getElementById('findFileBtn').addEventListener('click', async () => {
     const data = await readFileData(handle);
     fileHandle = handle;
     await idbSet('fileHandle', handle);
-    collected = data.collected || {};
-    customStores = data.customStores || [];
-    overrides = data.overrides || {};
-    mergeCustomStores();
-    applyOverrides();
+    applyFileData(data);
     setFileStatus('Terhubung ke file: ' + fileHandle.name);
     render();
   }catch(e){
@@ -759,34 +768,50 @@ function loadExcelJS(){
 document.getElementById('exportBackupBtn').addEventListener('click', async () => {
   setStatus('Nyiapin backup data...');
   try{
-    // Pastikan data terbaru juga tersimpan ke file yang sedang terhubung.
+    // Kalau sedang terhubung ke JSON, baca ulang isi file terbaru.
+    // Jangan save() di sini karena state browser yang kosong bisa menimpa file.
     if(fileHandle){
-      const savedOk = await save();
-      if(!savedOk) throw new Error('Data belum berhasil disimpan ke file JSON terhubung.');
+      const perm = await fileHandle.queryPermission({mode:'readwrite'});
+      if(perm !== 'granted'){
+        throw new Error('Izin baca/tulis file belum diberikan. Hubungkan ulang file lalu pilih Allow/Izinkan.');
+      }
+      const latest = await readFileData(fileHandle);
+      applyFileData(latest);
     }
 
-    // Format dibuat sama persis dengan file yang dipakai fitur "Hubungkan file",
-    // jadi hasil backup bisa langsung dipakai lagi lewat "Cari file yang udah ada".
-    const backupData = { collected, customStores, overrides };
+    // Backup portable: ikut menyimpan snapshot Data Store lengkap.
+    const backupData = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      stores: STORES,
+      collected,
+      customStores,
+      overrides
+    };
+
     const json = JSON.stringify(backupData, null, 2);
     const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const now = new Date();
     const pad = n => String(n).padStart(2, '0');
-    const stamp = now.getFullYear() + '' + pad(now.getMonth()+1) + '' + pad(now.getDate()) + '-' + pad(now.getHours()) + '' + pad(now.getMinutes()) + '' + pad(now.getSeconds());
+    const stamp = now.getFullYear() + '' + pad(now.getMonth()+1) + '' +
+      pad(now.getDate()) + '-' + pad(now.getHours()) + '' +
+      pad(now.getMinutes()) + '' + pad(now.getSeconds());
+    const fileName = 'tlog-tracker-backup-' + stamp + '.json';
     a.href = url;
-    a.download = 'tlog-tracker-backup-' + stamp + '.json';
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
 
     const jumlahCollected = Object.keys(collected || {}).length;
-    const jumlahCustom = (customStores || []).length;
-    setStatus('Backup berhasil di-export: ' + a.download + ' (' + jumlahCollected + ' status, ' + jumlahCustom + ' toko manual)');
+    const jumlahStores = (STORES || []).length;
+    setStatus('✅ Backup berhasil: ' + fileName + ' (' + jumlahStores +
+      ' toko, ' + jumlahCollected + ' status tersimpan)');
   }catch(e){
-    setStatus('Gagal export backup: ' + e.message);
+    setStatus('❌ Gagal export backup: ' + e.message);
   }
 });
 
