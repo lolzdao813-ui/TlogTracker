@@ -479,8 +479,18 @@ document.getElementById('findFileBtn').addEventListener('click', async () => {
   try{
     const [handle] = await window.showOpenFilePicker({
       types: [{ description:'JSON', accept:{'application/json':['.json']} }],
-      multiple: false
+      multiple: false,
+      // Penting: file yang dicari harus punya izin tulis karena aplikasi
+      // memang menyimpan perubahan kembali ke JSON yang sama.
+      mode: 'readwrite'
     });
+
+    // Pastikan browser memberikan izin tulis sebelum file dijadikan file aktif.
+    const perm = await handle.requestPermission({mode:'readwrite'});
+    if(perm !== 'granted'){
+      throw new Error('Izin tulis ke file tidak diberikan. Pilih Allow/Izinkan saat diminta browser.');
+    }
+
     const data = await readFileData(handle);
     fileHandle = handle;
     await idbSet('fileHandle', handle);
@@ -519,8 +529,20 @@ async function load(){
 
 async function save(){
   if(fileHandle){
-    try{ await writeFileData(); return; }
-    catch(e){ setStatus('Gagal nyimpen ke file: ' + e.message); }
+    try{
+      const perm = await fileHandle.queryPermission({mode:'readwrite'});
+      if(perm !== 'granted'){
+        const requested = await fileHandle.requestPermission({mode:'readwrite'});
+        if(requested !== 'granted') throw new Error('Izin tulis ke file belum diberikan.');
+      }
+      await writeFileData();
+      setFileStatus('Tersimpan ke file: ' + fileHandle.name);
+      return true;
+    }
+    catch(e){
+      setStatus('Gagal nyimpen ke file: ' + e.message);
+      setFileStatus('Gagal menyimpan ke file: ' + (fileHandle?.name || 'JSON') + '. Cek izin tulis.');
+    }
   }
   try{
     localStorage.setItem('ziptoko-collected', JSON.stringify(collected));
@@ -528,6 +550,7 @@ async function save(){
     localStorage.setItem('ziptoko-overrides', JSON.stringify(overrides));
   }
   catch(e){ setStatus('Gagal nyimpen status: ' + e.message); }
+  return false;
 }
 
 function setStatus(msg){ document.getElementById('status').textContent = msg; }
