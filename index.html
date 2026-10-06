@@ -358,9 +358,24 @@ async function readFileData(handle){
 }
 
 async function writeFileData(){
+  if(!fileHandle) throw new Error('Belum ada file JSON yang terhubung.');
+  const payload = JSON.stringify({ collected, customStores, overrides }, null, 2);
   const writable = await fileHandle.createWritable();
-  await writable.write(JSON.stringify({ collected, customStores, overrides }, null, 2));
-  await writable.close();
+  try{
+    await writable.write(payload);
+    await writable.close();
+  }catch(e){
+    try{ await writable.abort(); }catch(_){}
+    throw e;
+  }
+  // Verifikasi bahwa handle membaca isi yang baru ditulis. Ini juga membantu
+  // mendeteksi file/izin yang ternyata bukan file yang sedang dipakai.
+  const check = await fileHandle.getFile();
+  const checkText = await check.text();
+  if(checkText !== payload){
+    throw new Error('File tidak berisi data terbaru setelah disimpan. Cek OneDrive dan izin tulis.');
+  }
+  return true;
 }
 
 function setFileStatus(msg){ document.getElementById('fileStatus').textContent = msg; }
@@ -530,27 +545,32 @@ async function load(){
 async function save(){
   if(fileHandle){
     try{
-      const perm = await fileHandle.queryPermission({mode:'readwrite'});
+      let perm = await fileHandle.queryPermission({mode:'readwrite'});
       if(perm !== 'granted'){
-        const requested = await fileHandle.requestPermission({mode:'readwrite'});
-        if(requested !== 'granted') throw new Error('Izin tulis ke file belum diberikan.');
+        // requestPermission hanya aman dipanggil dari aksi user. Kalau belum
+        // granted, jangan diam-diam fallback ke localStorage karena itu bikin
+        // user mengira JSON sudah tersimpan padahal belum.
+        throw new Error('Izin tulis belum diberikan. Klik "Hubungkan file" lalu izinkan akses tulis.');
       }
       await writeFileData();
-      setFileStatus('Tersimpan ke file: ' + fileHandle.name);
+      setFileStatus('✅ Tersimpan ke file: ' + fileHandle.name);
       return true;
-    }
-    catch(e){
-      setStatus('Gagal nyimpen ke file: ' + e.message);
-      setFileStatus('Gagal menyimpan ke file: ' + (fileHandle?.name || 'JSON') + '. Cek izin tulis.');
+    }catch(e){
+      setStatus('❌ Gagal nyimpen ke JSON: ' + e.message);
+      setFileStatus('❌ Gagal menyimpan ke ' + (fileHandle?.name || 'JSON') + ': ' + e.message);
+      return false;
     }
   }
   try{
     localStorage.setItem('ziptoko-collected', JSON.stringify(collected));
     localStorage.setItem('ziptoko-stores', JSON.stringify(customStores));
     localStorage.setItem('ziptoko-overrides', JSON.stringify(overrides));
+    return true;
   }
-  catch(e){ setStatus('Gagal nyimpen status: ' + e.message); }
-  return false;
+  catch(e){
+    setStatus('❌ Gagal nyimpen status: ' + e.message);
+    return false;
+  }
 }
 
 function setStatus(msg){ document.getElementById('status').textContent = msg; }
@@ -741,10 +761,8 @@ document.getElementById('exportBackupBtn').addEventListener('click', async () =>
   try{
     // Pastikan data terbaru juga tersimpan ke file yang sedang terhubung.
     if(fileHandle){
-      try{ await writeFileData(); }
-      catch(e){
-        setStatus('Backup tetap dibuat, tapi gagal update file terhubung: ' + e.message);
-      }
+      const savedOk = await save();
+      if(!savedOk) throw new Error('Data belum berhasil disimpan ke file JSON terhubung.');
     }
 
     // Format dibuat sama persis dengan file yang dipakai fitur "Hubungkan file",
@@ -963,12 +981,12 @@ async function processFiles(fileList){
     }
   });
 
-  await save();
+  const savedOk = await save();
   render();
 
   document.getElementById('lastScan').textContent =
     'Scan terakhir: ' + zips.length + ' file zip - baru ' + baru + ', sudah ada ' + adaSebelumnya + ', dilewati ' + dilewati;
-  setStatus('');
+  if(savedOk) setStatus('✅ Data scan tersimpan ke ' + (fileHandle ? fileHandle.name : 'browser'));
 
   const panelTgl = document.getElementById('panelTgl');
   const listTgl = document.getElementById('listTgl');
