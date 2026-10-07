@@ -873,10 +873,64 @@ document.querySelectorAll('.tab').forEach(t => {
 const drop = document.getElementById('drop');
 const folderInput = document.getElementById('folderInput');
 const filesInput = document.getElementById('filesInput');
-document.getElementById('pickFolder').addEventListener('click', () => { folderInput.value = ''; folderInput.click(); });
-document.getElementById('pickFiles').addEventListener('click', () => filesInput.click());
+document.getElementById('pickFolder').addEventListener('click', async () => {
+  // Coba File System Access API dulu supaya pemilihan folder lebih konsisten,
+  // termasuk lokasi seperti drive/network share yang bisa diakses Windows.
+  if(window.showDirectoryPicker){
+    try{
+      const dir = await window.showDirectoryPicker({mode:'read'});
+      const files = await collectZipFilesFromDirectory(dir);
+      processFiles(files);
+      return;
+    }catch(e){
+      if(e.name === 'AbortError') return;
+      // fallback ke input webkitdirectory di bawah
+    }
+  }
+  folderInput.value = '';
+  folderInput.click();
+});
+
+document.getElementById('pickFiles').addEventListener('click', async () => {
+  // Pilih ZIP langsung. Ini tidak lagi mengharuskan ZIP berada di dalam folder.
+  if(window.showOpenFilePicker){
+    try{
+      const handles = await window.showOpenFilePicker({
+        multiple: true,
+        types: [{ description:'File ZIP', accept:{'application/zip':['.zip']} }]
+      });
+      const files = await Promise.all(handles.map(h => h.getFile()));
+      processFiles(files);
+      return;
+    }catch(e){
+      if(e.name === 'AbortError') return;
+      // fallback ke input file biasa
+    }
+  }
+  filesInput.value = '';
+  filesInput.click();
+});
+
 folderInput.addEventListener('change', e => processFiles([...e.target.files]));
 filesInput.addEventListener('change', e => processFiles([...e.target.files]));
+
+async function collectZipFilesFromDirectory(dirHandle){
+  const files = [];
+  async function walk(dir){
+    for await (const entry of dir.values()){
+      if(entry.kind === 'file'){
+        try{
+          const f = await entry.getFile();
+          if(f.name.toLowerCase().endsWith('.zip')) files.push(f);
+        }catch(e){}
+      }else if(entry.kind === 'directory'){
+        await walk(entry);
+      }
+    }
+  }
+  await walk(dirHandle);
+  return files;
+}
 
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
